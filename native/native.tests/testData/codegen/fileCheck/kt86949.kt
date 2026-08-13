@@ -33,7 +33,39 @@ fun foo(): Boolean {
 // CHECK-LABEL: epilogue:
 }
 
+sealed interface State {
+    data object Initial : State
+
+    data class Updated(val value: Int) : State
+}
+
+// Unlike foo(), the write to the final type is followed by a smart cast and
+// continue. The widened value is read by an exhaustive when on the next iteration.
+fun reproduceStateUpdate(): Int {
+    var state: State = State.Initial
+
+    for (shouldUpdate in listOf(true, false)) {
+        if (shouldUpdate) {
+            state = State.Updated(42)
+            if (state is State.Updated) {
+                state.value
+            }
+            continue
+        }
+
+        return when (val current = state) {
+            State.Initial -> 0
+            is State.Updated -> current.value
+        }
+    }
+
+    error("unreachable")
+}
+
 // CHECK-LABEL: define ptr @"kfun:#box(){}kotlin.String"
 fun box(): String {
-    return if (foo()) "fail" else "OK"
+    if (foo()) return "fail: original reproducer"
+
+    val value = reproduceStateUpdate()
+    return if (value == 42) "OK" else "fail: state value is $value"
 }
