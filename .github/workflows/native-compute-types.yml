@@ -44,7 +44,7 @@ jobs:
         shell: pwsh
         run: >-
           .\gradlew.bat :nativeCompilerTest :nativeCompilerUnitTest
-          -Pkotlin.native.enabled=true
+          --project-prop=kotlin.native.enabled=true
           --continue --no-daemon --stacktrace -q
 
       - name: Upload test reports
