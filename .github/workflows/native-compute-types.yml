@@ -1,0 +1,58 @@
+name: Kotlin/Native ComputeTypes regression
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-compute-types-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-compiler-tests:
+    name: Native compiler integration and unit tests
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    steps:
+      - name: Enable long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan/dependencies
+          key: konan-${{ runner.os }}-${{ hashFiles('kotlin-native/konan/konan.properties') }}
+
+      - name: Run all Native compiler tests
+        shell: pwsh
+        run: >-
+          .\gradlew.bat :nativeCompilerTest :nativeCompilerUnitTest
+          -Pkotlin.native.enabled=true
+          --continue --no-daemon --stacktrace -q
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-compiler-test-reports
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+          if-no-files-found: ignore
