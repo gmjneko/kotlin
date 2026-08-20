@@ -2,30 +2,52 @@ name: Kotlin/Native ComputeTypes regression
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Commit or branch to test without modifying it
+        required: false
+        default: master
+        type: string
   push:
+    branches:
+      - master
 
 permissions:
   contents: read
 
 concurrency:
-  group: native-compute-types-${{ github.ref }}
+  group: native-compute-types-${{ github.workflow }}-${{ inputs.source_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  native-compiler-tests:
-    name: Native compiler integration and unit tests
+  mingw-codegen-box:
+    name: mingwX64 common codegen box (${{ matrix.optimization }})
     runs-on: windows-2022
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        optimization:
+          - DEBUG
+          - OPT
 
     steps:
       - name: Enable long paths
         shell: pwsh
         run: git config --global core.longpaths true
 
-      - name: Check out repository
+      - name: Check out source under test
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
 
-      - name: Set up JDK 21
+      - name: Set up JDK 11 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
+      - name: Set up JDK 21 for Gradle
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -38,21 +60,93 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.konan/dependencies
-          key: konan-${{ runner.os }}-${{ hashFiles('kotlin-native/konan/konan.properties') }}
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('kotlin-native/konan/konan.properties') }}
 
-      - name: Run all Native compiler tests
+      - name: Record tested revision
+        shell: pwsh
+        run: git rev-parse HEAD
+
+      - name: Run common Native codegen box suite
         shell: pwsh
         run: >-
-          .\gradlew.bat :nativeCompilerTest :nativeCompilerUnitTest
+          .\gradlew.bat :native:native.tests:codegen-box:test
           --project-prop=kotlin.native.enabled=true
-          --continue --no-daemon --stacktrace -q
+          --project-prop=kn.target=mingw_x64
+          --project-prop=kn.optimizationMode=${{ matrix.optimization }}
+          --no-daemon --stacktrace -q
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: native-compiler-test-reports
+          name: mingw-codegen-box-${{ matrix.optimization }}
           path: |
-            **/build/test-results/**
-            **/build/reports/tests/**
+            native/native.tests/codegen-box/build/test-results/**
+            native/native.tests/codegen-box/build/reports/tests/**
+          if-no-files-found: ignore
+
+  macos-arm64-kt88544:
+    name: macosArm64 KT-88544 (${{ matrix.optimization }})
+    runs-on: macos-15
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        optimization:
+          - DEBUG
+          - OPT
+
+    steps:
+      - name: Check out source under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Require an ARM64 runner
+        shell: bash
+        run: test '${{ runner.arch }}' = 'ARM64'
+
+      - name: Set up JDK 11 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
+      - name: Set up JDK 21 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan/dependencies
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('kotlin-native/konan/konan.properties') }}
+
+      - name: Record tested revision
+        shell: bash
+        run: git rev-parse HEAD
+
+      - name: Run KT-88544 on Native
+        shell: bash
+        run: >-
+          ./gradlew :native:native.tests:codegen-box:test
+          --tests 'org.jetbrains.kotlin.konan.test.blackbox.FirNativeCodegenBoxTestGenerated$Box$ControlStructures.testKt88544'
+          --project-prop=kotlin.native.enabled=true
+          --project-prop=kn.target=macos_arm64
+          --project-prop=kn.optimizationMode=${{ matrix.optimization }}
+          --no-daemon --stacktrace -q
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-kt88544-${{ matrix.optimization }}
+          path: |
+            native/native.tests/codegen-box/build/test-results/**
+            native/native.tests/codegen-box/build/reports/tests/**
           if-no-files-found: ignore
