@@ -351,7 +351,7 @@ internal class ComputeTypesPass(val context: NativeBackendContext) : BodyLowerin
                     // so the merged values must be taken here, not just the fall-through ones.
                     val vvAtConditionStart = continuesCFMPInfo.variablesValues
                     val vvAtConditionEnd = loop.condition.accept(this, vvAtConditionStart)
-                    vvAtLoopStart = vvAtConditionEnd.copy() // The visitors may return a shared bit set.
+                    vvAtLoopStart = vvAtConditionEnd
                     if (iter > 1) // Merge starting with the second iteration since the first is always executed.
                         vvAtLoopStart.or(prevVVAtLoopStart)
 
