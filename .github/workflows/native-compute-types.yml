@@ -85,6 +85,65 @@ jobs:
             native/native.tests/codegen-box/build/reports/tests/**
           if-no-files-found: ignore
 
+  native-compiler-lifecycle:
+    name: Native compiler integration and unit tests (DEBUG)
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    steps:
+      - name: Enable long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - name: Check out source under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Set up JDK 11 toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 11
+
+      - name: Set up JDK 21 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan/dependencies
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('kotlin-native/konan/konan.properties') }}
+
+      - name: Record tested revision
+        shell: pwsh
+        run: git rev-parse HEAD
+
+      - name: Run the complete Native compiler lifecycle
+        shell: pwsh
+        run: >-
+          .\gradlew.bat :nativeCompilerTest :nativeCompilerUnitTest
+          --project-prop=kotlin.native.enabled=true
+          --project-prop=kn.target=mingw_x64
+          --project-prop=kn.optimizationMode=DEBUG
+          --continue --no-daemon --stacktrace -q
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-compiler-lifecycle-debug
+          path: |
+            **/build/test-results/**
+            **/build/reports/tests/**
+          if-no-files-found: ignore
+
   macos-arm64-kt88544:
     name: macosArm64 KT-88544 (${{ matrix.optimization }})
     runs-on: macos-15
